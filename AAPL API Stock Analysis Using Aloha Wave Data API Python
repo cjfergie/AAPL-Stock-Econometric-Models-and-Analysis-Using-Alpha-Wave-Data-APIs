@@ -1,0 +1,383 @@
+from bs4 import BeautifulSoup as bs
+import numpy as np
+import pandas as pd
+import pandas_datareader as dr
+import matplotlib.pyplot as pt
+import datetime
+import requests
+import json
+
+
+Earnings History
+
+import requests
+
+url = "https://stock-analysis.p.rapidapi.com/api/v1/resources/earnings-history"
+
+querystring = {"ticker":"AAPL"}
+
+headers = {
+	"X-RapidAPI-Key": "c49424df8fmsh300d7825be010adp16810bjsnfb16df37bbbe",
+	"X-RapidAPI-Host": "stock-analysis.p.rapidapi.com"
+}
+
+response = requests.get(url, headers=headers, params=querystring)
+
+print(response.json())
+
+response
+
+Create Stats Data Frane for Earnings History
+
+stats_df = pd.DataFrame.from_dict(response.json())
+stats_df = stats_df.transpose()
+stats_df
+
+Growth Estimate
+
+import requests
+
+url = "https://stock-analysis.p.rapidapi.com/api/v1/resources/growth-estimate"
+
+querystring = {"ticker":"AAPL"}
+
+headers = {
+	"X-RapidAPI-Key": "c49424df8fmsh300d7825be010adp16810bjsnfb16df37bbbe",
+	"X-RapidAPI-Host": "stock-analysis.p.rapidapi.com"
+}
+
+g_estimate = requests.get(url, headers=headers, params=querystring)
+
+print(g_estimate.json())
+
+
+
+Create Data Frame for Growth Estimate
+
+# Create Key Statistics DataFrame
+stats_df = pd.DataFrame.from_dict(g_estimate.json())
+stats_df = stats_df.transpose()
+stats_df
+
+Calculating Firm's Free Cash Flow:
+
+Extracting Cash Flow Statements
+
+import requests
+
+url = "https://financial-statements.p.rapidapi.com/api/v1/resources/cash-flow"
+
+querystring = {"ticker":"AAPL"}
+
+headers = {
+	"X-RapidAPI-Key": "c49424df8fmsh300d7825be010adp16810bjsnfb16df37bbbe",
+	"X-RapidAPI-Host": "financial-statements.p.rapidapi.com"
+}
+
+cash_flow = requests.get(url, headers=headers, params=querystring)
+
+print(cash_flow.json())
+
+# Create Cash Flow Statement DataFrame
+cash_flow_df = pd.DataFrame.from_dict(cash_flow.json())
+cash_flow_df = cash_flow_df.drop('ttm', axis = 1)
+cash_flow_df
+
+Extracting Income Statement
+
+import requests
+
+url = "https://financial-statements.p.rapidapi.com/api/v1/resources/income-statement"
+
+querystring = {"ticker":"AAPL"}
+
+headers = {
+	"X-RapidAPI-Key": "c49424df8fmsh300d7825be010adp16810bjsnfb16df37bbbe",
+	"X-RapidAPI-Host": "financial-statements.p.rapidapi.com"
+}
+
+inc_stat = requests.get(url, headers=headers, params=querystring)
+
+print(inc_stat.json())
+
+# Create Income Statement DataFrame
+inc_stat_df = pd.DataFrame.from_dict(inc_stat.json())
+inc_stat_df = inc_stat_df.drop('ttm', axis = 1)
+inc_stat_df
+
+Using income statement and cash flow for calculation of free cash flow of firm (FCFF), 
+
+Using, 
+
+    FCFF = Free Cash Flow + Income Statement*(1 - Effecttive Tax Rate)
+
+#Calculating FCFF using income statement and cash flow statement
+fcff = (cash_flow_df.loc['Free Cash Flow'].astype(int) \
+        + inc_stat_df.loc['Interest Expense'].astype(int) \
+        *(1 - inc_stat_df.loc['Tax Provision'].astype(int) \
+          / inc_stat_df.loc['Pretax Income'].astype(int))).astype(int)
+
+#Creating Pandas Data Frame
+fcff_df = fcff.to_frame().transpose()
+fcff_df
+
+Determining the CAGR and long term growth rate to be used in forecasting FCFF
+
+#CAGR of fcff
+latest_fcff = float(fcff_df.iloc[0, len(fcff_df.columns) - 1])
+earliest_fcff = float(fcff_df.iloc[0, 1])
+
+fcff_cash_flow_cagr = (latest_fcff/earliest_fcff)**(float(1/(len(fcff_df.columns)-2))) - 1
+
+fcff_cash_flow_cagr
+
+
+#Constant Expected Growth Rate
+long_term_growth = fcff_cash_flow_cagr/2
+long_term_growth
+
+#forecasted fcff
+forecast_fcff_df = pd.DataFrame(columns=['Year ' + str(i) for i in range(1,7)])
+fcff_forecast_lst = []
+for i in range(1,7):
+    if i != 6:
+        fcff_forecast = latest_fcff*(1+fcff_cash_flow_cagr)**i
+    else:
+        fcff_forecast = latest_fcff*(1+fcff_cash_flow_cagr)\
+                                        **(i-1)*(1+long_term_growth)
+    fcff_forecast_lst.append(int(fcff_forecast))
+forecast_fcff_df.loc[0] = fcff_forecast_lst
+forecast_fcff_df
+
+#forecasted fcff
+forecasted_fcff_df = pd.DataFrame(columns=['Year ' + str(i) for i in range(1, 7)])
+fcff_forecast_lst = []
+for i in range (1, 7):
+  if i !=6:
+      fcff_forecast = latest_fcff*(1+fcff_cash_flow_cagr)**i
+  else:
+      fcff_forecast = latest_fcff*(1+fcff_cash_flow_cagr)\
+                                      **(i-1)*(1+long_term_growth)
+  fcff_forecast_lst.append(int(fcff_forecast))
+forecasted_fcff_df.loc[0] = fcff_forecast_lst
+forecasted_fcff_df
+
+
+
+Having forecasted FCFF for the 6 years ahead and retained the growth rate, the weighted average cost of capital (WACC) is now calculated for the second stage/two-stage valuation model.
+
+This is achieved using,
+
+WACC = (equity to capital ratio * required return on equity) + (debt to capital ratio * after tax required return on debt)
+
+That is, 
+
+$$WACC$$ 
+\
+\
+$$   =   $$ 
+
+
+\
+$$\frac{E}{E+D}r_e\ +\ \frac{D}{E+D}r_d(1\ -\ tax\ rate)$$<br>
+
+$where,$
+
+$E = market\ value\ of\ equity$<br>
+$D = market\ value\ of\ debt$<br>
+$r_e = required\ return\ on\ equity$<br>
+$r_d = required\ return\ on\ debt$<br>
+$tax\ rate = effective\ tax\ rate$<br>
+\
+\
+Using the balance sheet from Alpha Wave Data Financial API and the key statistics from Alpha Wave Data Stock Analysis API, the required data can be extracted for determining the WACC.
+
+
+
+#Extracting Balance Sheet
+import requests
+
+url = "https://financial-statements.p.rapidapi.com/api/v1/resources/balance-sheet"
+
+querystring = {"ticker":"AAPL"}
+
+headers = {
+	"X-RapidAPI-Key": "c49424df8fmsh300d7825be010adp16810bjsnfb16df37bbbe",
+	"X-RapidAPI-Host": "financial-statements.p.rapidapi.com"
+}
+
+balance_sheet = requests.get(url, headers=headers, params=querystring)
+
+balance_sheet.json()
+
+# Creating Balance Sheet DataFrame
+balance_sheet_df = pd.DataFrame.from_dict(balance_sheet.json())
+balance_sheet_df
+
+#Extracting Key Statistics
+import requests
+
+url = "https://stock-analysis.p.rapidapi.com/api/v1/resources/key-stats"
+
+querystring = {"ticker":"AAPL"}
+
+headers = {
+	"X-RapidAPI-Key": "c49424df8fmsh300d7825be010adp16810bjsnfb16df37bbbe",
+	"X-RapidAPI-Host": "stock-analysis.p.rapidapi.com"
+}
+
+key_stats = requests.get(url, headers=headers, params=querystring)
+
+key_stats.json()
+
+# Creating Key Statistics DataFrame
+key_stats_df = pd.DataFrame.from_dict(key_stats.json())
+key_stats_df = key_stats_df.transpose()
+key_stats_df
+
+Estimating return on equity using the Capital Asset Pricing Model (CAPM),
+
+$$r_e = r_f\ +\ (β*MRP)$$<br>
+
+
+\
+where,
+\
+$r_e = required\ return\ on\ equity$<br>
+$r_f = risk\ free\ rate$<br>
+$β = beta$<br>
+$MRP = market\ risk\ premium$<br>
+
+Aquiring the risk free rate using 10 year Treasury Bond
+
+# Risk-free Rate
+timespan = 100
+current_date = datetime.date.today()
+past_date = current_date-datetime.timedelta(days=timespan)
+risk_free_rate_df = dr.DataReader(['^TNX'], ['yahoo'], [past_date], [current_date]) 
+risk_free_rate = (risk_free_rate_df.iloc[len(risk_free_rate_df)-1,5])/100
+risk_free_rate
+
+# Risk-free Rate
+timespan = 100
+current_date = datetime.date.today()
+past_date = current_date-datetime.timedelta(days=timespan)
+risk_free_rate_df = dr.DataReader("TNX", "yahoo", past_date, current_date) 
+risk_free_rate = (risk_free_rate_df.iloc[len(risk_free_rate_df)-1,5])/100
+risk_free_rate
+
+#Taking the Risk Free Rate As:
+risk_free_rate = 0.00893
+
+
+#Aquiring Stock's Beta
+equity_beta = float(key_stats_df.loc[r'Beta (5Y monthly)'])
+equity_beta
+
+#Estimating market premium using https://seekingalpha.com/article/4571595-data-update-2-for-2023-rocky-year-equities
+market_risk_premium = 5.94
+
+
+#Calculating required return on equity using CAPM
+equity_return = risk_free_rate + (equity_beta*market_risk_premium)
+equity_return
+
+Estimating Required Return On Debt
+
+#Interest Expense
+interest_expense = inc_stat_df.loc['Interest Expense']
+interest_exp_df = interest_expense.to_frame().transpose()
+interest_exp_str = interest_exp_df.values[0][-1:]
+interest_exp_int = int(interest_exp_str)
+
+#Total debt
+total_debt = balance_sheet_df.loc['Total Debt']
+total_debt_df = total_debt.to_frame().transpose()
+total_debt_str = total_debt_df.values[0][-1:]
+total_debt_int = int(total_debt_str)
+
+#Required Return On Debt
+debt_return = interest_exp_int/total_debt_int
+debt_return
+
+#Effective Tax Rate
+effective_tax_rate = inc_stat_df.loc['Tax Provision'].astype(int)
+avg_effective_tax_rate = sum(effective_tax_rate)/len(effective_tax_rate)
+avg_effective_tax_rate
+
+Estimating Capital Structure
+
+#Extracting the caompany's market cap from Alpha Wave Data Stock Analysis API
+#Market Value of Equity
+market_cap_str = key_stats_df.loc[r'Market cap (intra-day)'][0]
+
+market_cap_lst = market_cap_str.split('.')
+if market_cap_str[len(market_cap_str)-1] == 'T':
+  market_cap_length = len(market_cap_str)-1
+  market_cap_lst[1] = market_cap_lst[1].replace('T', (9-market_cap_length)*'0')
+  market_cap_int = int(''.join(market_cap_lst))
+if market_cap_str[len(market_cap_str)-1] == 'B':
+  market_cap_length = len(market_cap_str)-1
+  market_cap_lst[1] = market_cap_lst[1].replace('B', (6-market_cap_length)*'0')
+  market_cap_int = int(''.join(market_cap_lst))
+  
+
+market_cap_int
+
+#Calculating Book To Value of Company Using Alpha Wave Data API Financial Statements Balance Sheet
+net_debt = balance_sheet_df.loc['Net Debt']
+net_debt_df = net_debt.to_frame().transpose()
+net_debt_str = net_debt_df.values[0][-1:]
+net_debt_int = int(net_debt_str)
+net_debt_int
+
+#Company value is sum of equity and debt market values
+#Company Value
+company_value = market_cap_int + net_debt_int
+company_value 
+
+##Calculating firm's WACC
+wacc = ((market_cap_int/company_value)*equity_return) \
+        + ((net_debt_int/company_value)*(debt_return*(1-avg_effective_tax_rate)))
+
+wacc
+
+
+
+Stock Valuation
+
+# Equity Value Calculation
+discounted_fcff_lst = []
+for year in range(0,5):
+    discounted_fcff = forecast_fcff_df.iloc[0,year]/(1+wacc)**(year+1)
+    discounted_fcff_lst.append(int(discounted_fcff))
+terminal_value = forecast_fcff_df.iloc[0,5]/(wacc-long_term_growth)
+PV_terminal_value = int(terminal_value/(1+wacc)**5)
+enterprise_value = sum(discounted_fcff_lst)+PV_terminal_value
+equity_value = enterprise_value-net_debt_int
+equity_value
+
+# Total Shares Outstanding
+shares_outstanding_str = key_stats_df.loc[r'Shares outstanding '][0]
+
+shares_outstanding_lst = shares_outstanding_str.split('.')
+if shares_outstanding_str[len(shares_outstanding_str)-1] == 'T':
+    shares_outstanding_length = len(shares_outstanding_lst[1])-1
+    shares_outstanding_lst[1] = shares_outstanding_lst[1].replace('T',(9-shares_outstanding_length)*'0')
+    shares_outstanding_int = int(''.join(shares_outstanding_lst))
+if shares_outstanding_str[len(shares_outstanding_str)-1] == 'B':
+    shares_outstanding_length = len(shares_outstanding_lst[1])-1
+    shares_outstanding_lst[1] = shares_outstanding_lst[1].replace('B',(6-shares_outstanding_length)*'0')
+    shares_outstanding_int = int(''.join(shares_outstanding_lst))
+
+shares_outstanding_int
+
+# Two-stage FCFF Valuation Model Stock Price Estimate
+stock_price = equity_value / shares_outstanding_int
+stock_price = '${:,.2f}'.format(stock_price)
+print("Model Stock Price = %s"%(stock_price))
+
+# Actual Stock Price
+actual_stock_price = market_cap_int / shares_outstanding_int
+actual_stock_price = '${:,.2f}'.format(actual_stock_price)
+print("Actual Stock Price = %s"%(actual_stock_price))
